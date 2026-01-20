@@ -1,5 +1,6 @@
 import os
 import asyncio
+import json
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
@@ -36,15 +37,39 @@ class Database:
             self.users = []
             self.appointments = []
             self.summaries = []  # New: Call summaries
+            
+            # Load mock data from disk if exists
+            self.mock_file = "mock_db.json"
+            if os.path.exists(self.mock_file):
+                try:
+                    with open(self.mock_file, 'r') as f:
+                        data = json.load(f)
+                        self.summaries = data.get("summaries", [])
+                        self.users = data.get("users", [])
+                except Exception as e:
+                    print(f"Failed to load mock DB: {e}")
         else:
             self.client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    async def save_summary(self, user_id: Optional[str], content: str, bookings: List[Dict], timestamp: str) -> Dict[str, Any]:
+    def _save_mock_db(self):
+        if self.use_mock:
+            try:
+                import json
+                with open(self.mock_file, 'w') as f:
+                    json.dump({
+                        "summaries": self.summaries,
+                        "users": self.users
+                    }, f, indent=2)
+            except Exception as e:
+                print(f"Failed to save mock DB: {e}")
+
+    async def save_summary(self, user_id: Optional[str], content: str, bookings: List[Dict], timestamp: str, usage: Optional[Dict] = None) -> Dict[str, Any]:
         """Save a call summary to the database."""
         summary = {
             "id": f"summary_{datetime.now().strftime('%Y%m%d%H%M%S')}",
             "user_id": user_id,
             "content": content,
+            "usage": usage,
             "bookings_snapshot": bookings,
             "timestamp": timestamp,
             "created_at": datetime.now().isoformat()
@@ -52,12 +77,29 @@ class Database:
         
         if self.use_mock:
             self.summaries.append(summary)
+            self._save_mock_db()  # Persist to disk
             print(f"Summary saved: {summary['id']}")
             return summary
         
         # Real Supabase
         res = self.client.table("summaries").insert(summary).execute()
         return res.data[0] if res.data else summary
+
+    async def get_all_summaries(self) -> List[Dict[str, Any]]:
+        """Retrieve all call summaries for analytics."""
+        if self.use_mock:
+            print(f"DB: Fetching {len(self.summaries)} summaries from Mock DB")
+            return sorted(self.summaries, key=lambda x: x['created_at'], reverse=True)
+            
+        print("DB: Fetching summaries from Supabase...")
+        try:
+            res = self.client.table("summaries").select("*").order("created_at", desc=True).execute()
+            data = res.data if res.data else []
+            print(f"DB: Fetched {len(data)} summaries from Supabase")
+            return data
+        except Exception as e:
+            print(f"DB: Error fetching summaries: {e}")
+            return []
 
     async def get_or_create_user(self, contact_number: str, name: Optional[str] = None) -> Dict[str, Any]:
         if self.use_mock:
@@ -135,7 +177,20 @@ class Database:
         res = self.client.table("appointments").select("*").eq("user_id", user_id).neq("status", "cancelled").execute()
         return res.data
 
+    def _is_valid_uuid(self, val: str) -> bool:
+        if self.use_mock:
+            return True
+        import uuid
+        try:
+            uuid.UUID(str(val))
+            return True
+        except ValueError:
+            return False
+
     async def cancel_appointment(self, appointment_id: str) -> bool:
+        if not self._is_valid_uuid(appointment_id):
+            return False
+
         if self.use_mock:
             for appt in self.appointments:
                 if appt["id"] == appointment_id:
@@ -217,6 +272,9 @@ class Database:
 
     async def update_appointment(self, appointment_id: str, details: str) -> bool:
         """Update the details (preferences) of an appointment."""
+        if not self._is_valid_uuid(appointment_id):
+            return False
+            
         if self.use_mock:
             for appt in self.appointments:
                 if appt["id"] == appointment_id:

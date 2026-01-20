@@ -1,9 +1,19 @@
+# LiveKit core
 livekit-agents>=0.8.0
+livekit>=0.11.0
+livekit-api>=0.6.0
+
+# LiveKit plugins
 livekit-plugins-deepgram
 livekit-plugins-cartesia
-livekit-plugins-google
 livekit-plugins-silero
-supabase
-python-dotenv
-google-generativeai
+livekit-plugins-openai
 livekit-plugins-bey
+
+# Database and utilities
+supabase>=2.0.0
+python-dotenv>=1.0.0
+
+# API for Analytics
+fastapi>=0.100.0
+uvicorn>=0.20.0

@@ -30,6 +30,7 @@ create table if not exists summaries (
   id text primary key,
   user_id uuid references users(id),
   content text,
+  usage jsonb,
   bookings_snapshot jsonb,
   timestamp text,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null

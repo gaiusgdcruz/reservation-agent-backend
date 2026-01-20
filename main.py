@@ -22,22 +22,19 @@ async def entrypoint(ctx: JobContext):
     # Wait for user to connect
     participant = await ctx.wait_for_participant()
     logger.info(f"starting voice assistant for participant {participant.identity}")
+    call_start_time = datetime.now()
 
     # Initialize plugins
     logger.info("Initializing STT, TTS, and LLM plugins...")
     stt_plugin = deepgram.STT()
     
     try:
-        tts_plugin = deepgram.TTS() 
+        tts_plugin = cartesia.TTS()
     except Exception as e:
-        logger.warning(f"Failed to init Deepgram TTS, falling back to OpenAI: {e}")
+        logger.warning(f"Failed to init Cartesia TTS, falling back to OpenAI: {e}")
         tts_plugin = openai.TTS()
 
-    try:
-        llm_plugin = openai.LLM(model="gpt-4o-mini")
-    except Exception as e:
-        logger.warning(f"Failed to init OpenAI LLM, falling back to Gemini: {e}")
-        llm_plugin = google.LLM(model="gemini-2.0-flash-001")
+    llm_plugin = openai.LLM(model="gpt-4o-mini")
     
     logger.info("Plugins initialized successfully.")
 
@@ -61,9 +58,11 @@ async def entrypoint(ctx: JobContext):
         "   - Restaurant Hours: 10:00 AM to 10:00 PM. "
         "   - POLICY: We only accept future reservations. If a past date is requested, politely explain: 'I apologize, but we can only secure reservations for future dates. May I suggest an alternative?' "
         "   - Use `book_appointment` for the booking. "
-        "\n4. GUEST PREFERENCES: After a successful booking, always ask: 'Is there a special occasion you are celebrating, or any dietary requirements our chefs should be aware of?' "
+        "\n4. GUEST PREFERENCES: After a successful booking (or modification), the tool will return a confirmation including an ID (e.g., ID: uuid-string). "
+        "Always ask: 'Is there a special occasion you are celebrating, or any dietary requirements our chefs should be aware of?' "
+        "Use the ID provided in the confirmation to call `update_booking_details`. Do not read the ID aloud to the guest. "
         "\n5. MODIFICATIONS: For modify/cancel requests, prioritize finding the record first via phone number and `retrieve_appointments`. "
-        "Confirm the specific details (Time/Guests) before making changes. Use the IDs returned by the tool. "
+        "Confirm the specific details (Time/Guests) before making changes. Use the IDs returned by the tools. "
         "\n6. VOICE STYLE: Keep responses elegant and concise. Avoid robotic lists; use natural transitions like 'Certainly,' 'I would be delighted to,' and 'Thank you for your patience.' "
         "\n7. CLOSING: Once the guest is satisfied, use the `end_conversation` tool and wish them an extraordinary day: 'We look forward to welcoming you to Marriott Kochi. Have a wonderful day.' "
     )
@@ -186,7 +185,8 @@ async def entrypoint(ctx: JobContext):
         
         # Current timestamp
         from datetime import datetime
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now()
+        timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
 
         summary_prompt = (
             f"Generate a concise, professional summary of this Marriot Kochi Reservation call.\\n\\n"
@@ -199,10 +199,39 @@ async def entrypoint(ctx: JobContext):
             f"1. Brief summary of the discussion\\n"
             f"2. All bookings with date/time and party size\\n"
             f"3. Any special requests or preferences mentioned\\n"
-            f"4. Next steps if any\\n"
             f"Format as clean markdown."
         )
+
+        # Calculate Usage Stats
+        duration_seconds = (now - call_start_time).total_seconds()
         
+        # Estimate tokens and TTS characters
+        input_tokens = 0
+        output_tokens = 0
+        tts_characters = 0
+        
+        for item in chat_items:
+            if isinstance(item, llm.ChatMessage):
+                content = item.text_content or ""
+                if item.role == "user":
+                    input_tokens += len(content) // 4
+                elif item.role == "assistant":
+                    output_tokens += len(content) // 4
+                    tts_characters += len(content)
+        
+        # Add summary prompt tokens to input estimate
+        input_tokens += len(summary_prompt) // 4
+        
+        usage = {
+            "duration_seconds": round(duration_seconds, 2),
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "tts_characters": tts_characters,
+            "model": "gpt-4o-mini",
+            "stt_service": "deepgram",
+            "tts_service": "cartesia"
+        }
+
         try:
             summary_ctx = llm.ChatContext()
             summary_ctx.add_message(role="user", content=summary_prompt)
@@ -215,14 +244,19 @@ async def entrypoint(ctx: JobContext):
             
             logger.info(f"Summary generated: {full_summary}")
             
-            # Save summary to database
+            # Save summary to database with usage
             from db import db
             user_id = user_info.get("id") if user_info else None
-            await db.save_summary(user_id, full_summary, bookings, timestamp)
-            logger.info("Summary saved to database.")
+            await db.save_summary(user_id, full_summary, bookings, timestamp, usage=usage)
+            logger.info(f"Summary saved to database. Usage: {usage}")
             
             if ctx.room.isconnected():
-                 payload = json.dumps({"type": "summary", "content": full_summary, "timestamp": timestamp})
+                 payload = json.dumps({
+                     "type": "summary", 
+                     "content": full_summary, 
+                     "timestamp": timestamp,
+                     "usage": usage
+                 })
                  await ctx.room.local_participant.publish_data(payload, reliable=True)
                  logger.info("Summary published to room.")
             

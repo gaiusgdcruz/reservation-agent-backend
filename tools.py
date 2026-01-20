@@ -44,7 +44,7 @@ class ReservationTools:
     @llm.function_tool
     async def identify_user(
         self, 
-        contact_number: Annotated[str, "The user's specific contact number (digits only, e.g. '9876543210')"],
+        contact_number: Annotated[str, "The user's contact number, which can be provided in any spoken format (e.g., 'five five five, one two three, four five six seven' or 'five five five one two three four five six seven'). The tool will automatically extract the digits."],
         name: Annotated[Optional[str], "The user's full name"] = None
     ):
         """Identify the user by their phone number and name."""
@@ -158,7 +158,7 @@ class ReservationTools:
         
         user_name = self._user_context.get('name', 'Guest') if self._user_context else 'Guest'
         human_time = format_datetime_human(start_time)
-        return f"Wonderful! I've booked your table, {user_name}. Your reservation is confirmed for {human_time} for {num_people} guests. We look forward to seeing you!"
+        return f"Wonderful! I've booked your table, {user_name}. Your reservation is confirmed for {human_time} for {num_people} guests (ID: {appt['id']}). We look forward to seeing you!"
 
     @llm.function_tool
     async def retrieve_appointments(self):
@@ -264,7 +264,7 @@ class ReservationTools:
         new_human_time = format_datetime_human(final_time)
         
         user_name = self._user_context.get('name', 'Guest') if self._user_context else 'Guest'
-        return f"Certainly, {user_name}. I've updated your reservation. It is now set for {new_human_time} for {final_people} guests. Is there anything else I can assist you with?"
+        return f"Certainly, {user_name}. I've updated your reservation. It is now set for {new_human_time} for {final_people} guests (ID: {appt['id']}). Is there anything else I can assist you with?"
 
     @llm.function_tool
     async def update_booking_details(
