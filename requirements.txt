@@ -1,0 +1,9 @@
+livekit-agents>=0.8.0
+livekit-plugins-deepgram
+livekit-plugins-cartesia
+livekit-plugins-google
+livekit-plugins-silero
+supabase
+python-dotenv
+google-generativeai
+livekit-plugins-bey
