@@ -101,3 +101,29 @@ The agent interacts with the database and manages conversations using the follow
 - **Parameters**: None
 
 ## Limitations and Edge Cases
+
+- **LiveKit Token Generation**: Automatic token rotation is not implemented; manual rotation is required.
+- **Cost Calculator Deployment**: The feature is implemented; however, since it is a separate API, it must be deployed independently. This is a platform limitation of Railway where one service cannot easily host both a long-running LiveKit worker and a web-facing API.
+- **LLM Model Constraints**: The application uses gpt-4o-mini due to cost constraints. Using a more capable model would yield better results.
+- **Static Business Logic**: Slots and tables are hardcoded in the database logic, resulting in a limited date range and no flexibility for holidays or changed hours.
+- **Phone Number Parsing**: Phone numbers are sometimes interpreted as words instead of numeric values. Current fix uses digit extraction, but fails for users providing international codes with '+' if not handled specifically.
+- **Supabase Client Compatibility**: The backend logic is sensitive to specific versions of the supabase-py library (e.g., desc=True vs descending=True), which can lead to silent failures in data fetching if dependencies are updated without testing.
+- **State Loss on Refresh**: Refreshing the browser or a momentary network glitch terminates the session entirely with no mechanism for a user to "reconnect" to their active call.
+- **Inaccurate Cost Estimation**: Token usage is currently estimated based on character count rather than actual API usage metadata, leading to potential discrepancies in financial reporting.
+
+## Improvements
+
+- **Security & Compliance**:
+    - Enable Row-Level Security (RLS) on database tables to ensure the API key cannot be used to scrape all user data.
+    - Implement authentication in the frontend application using Supabase Auth.
+- **Architecture & Scalability**:
+    - Improve reservation logic for better accuracy (e.g., checking for specific table availability rather than just "slots").
+    - Refactor the Analytics dashboard to use paginated API calls to prevent performance degradation as the summaries table grows.
+- **User Experience (UX)**:
+    - Improve the frontend UI by separating admin and user pages (e.g., /admin for analytics).
+    - Add ratings and feedback functionality at the end of the call to improve service quality.
+    - Implement an interactive visual avatar that reacts to the agent's voice tracks rather than using a static placeholder.
+- **Reliability & Maintenance**:
+    - Increase test coverage for both backend and frontend components, specifically focusing on the tool-calling logic and database edge cases.
+    - Implement a centralized logging and monitoring system (e.g., Sentry or Axiom) to track agent "hallucinations" or tool failures in real-time.
+    - Add a "Configuration" table in the database to allow non-technical staff to update restaurant hours and table counts without a code redeploy.
